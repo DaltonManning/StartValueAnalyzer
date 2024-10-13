@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "dgSpecHash": "gnht/Ps4/Ug=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\DM\\Desktop\\DDP\\API CODING STUFF\\StartValuesAnalyzer\\vscode\\StartValuesAnalyzer45.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\DM\\.nuget\\packages\\epplus\\7.4.1\\epplus.7.4.1.nupkg.sha512",
+    "C:\\Users\\DM\\.nuget\\packages\\epplus.interfaces\\6.1.1\\epplus.interfaces.6.1.1.nupkg.sha512",
+    "C:\\Users\\DM\\.nuget\\packages\\epplus.system.drawing\\6.1.1\\epplus.system.drawing.6.1.1.nupkg.sha512",
+    "C:\\Users\\DM\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "C:\\Users\\DM\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net45\\1.0.3\\microsoft.netframework.referenceassemblies.net45.1.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,15 @@
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer45.csproj.AssemblyReference.cache
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer.Form1.resources
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer.MaxNrOPCItems.resources
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer45.csproj.GenerateResource.cache
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer45.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer45.csproj.CoreCompileInputs.cache
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\bin\Debug\net45\StartValuesAnalyzer45.exe.config
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\bin\Debug\net45\StartValuesAnalyzer45.exe
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\bin\Debug\net45\StartValuesAnalyzer45.pdb
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\bin\Debug\net45\OpcNetApi.Com.dll
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\bin\Debug\net45\OpcNetApi.dll
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\bin\Debug\net45\OpcComRcw.dll
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartVal.8FBFF906.Up2Date
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer45.exe
+C:\Users\DM\Desktop\DDP\API CODING STUFF\StartValuesAnalyzer\vscode\obj\Debug\net45\StartValuesAnalyzer45.pdb

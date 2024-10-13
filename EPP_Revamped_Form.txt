@@ -1,0 +1,459 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Threading;
+using System.Windows.Forms;
+using System.Xml;
+using OfficeOpenXml;
+using OfficeOpenXml.Style;
+using ProgressIndicator;
+using StartValuesAnalyzer.AppRuntimeStructure;
+using StartValuesAnalyzer.Communication;
+using StartValuesAnalyzer.CompilerOutput.ApplicationStructureFile;
+using StartValuesAnalyzer.ModApplic;
+
+namespace StartValuesAnalyzer;
+
+public class Form1 : Form
+{
+    private ApplicationUnit m_Application;
+
+    private CProgramInstance m_ProgramInststance;
+
+    private global::ProgressIndicator.ProgressIndicator m_progressInd = new global::ProgressIndicator.ProgressIndicator();
+
+    private string m_directoryPath;
+
+    private IContainer components;
+
+    private RichTextBox txtReport;
+
+    private MenuStrip menuStrip1;
+
+    private ToolStripMenuItem selectApplicationCdoXmlFilesToolStripMenuItem;
+
+    private ToolStripMenuItem settingsToolStripMenuItem;
+
+    private ToolStripMenuItem setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem;
+
+    private ToolStripMenuItem compareToolStripMenuItem;
+
+    private ToolStripMenuItem filesToolStripMenuItem;
+
+    private ToolStripMenuItem selectApplicationsToolStripMenuItem;
+
+    public string DirectoryPath => m_directoryPath;
+
+    public Form1()
+    {
+        InitializeComponent();
+    }
+
+    private void selectApplicationsToolStripMenuItem_Click(object sender, EventArgs e)
+    {
+        using OpenFileDialog openFileDialog = new OpenFileDialog();
+        if (Directory.Exists("C:\\ABB Industrial IT Data\\Control IT Data\\OPC Server for AC 800M\\Files"))
+        {
+            openFileDialog.InitialDirectory = "C:\\ABB Industrial IT Data\\Control IT Data \\OPC Server for AC 800M\\Files";
+        }
+        openFileDialog.Title = "Select Application(s)";
+        openFileDialog.DefaultExt = "cdoXML";
+        openFileDialog.Filter = "Application domain (*.cdoXML)|*.cdoXML";
+        openFileDialog.Multiselect = true;
+        if (openFileDialog.ShowDialog() != DialogResult.OK)
+        {
+            return;
+        }
+        Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+        CreateWorkingFolder("StartValuesData");
+        CreateSessionLogFile();
+        ClearActivityReport();
+        StartProgressIndicator();
+        ReportActivity(openFileDialog.FileNames.Length + " Application file(s) selected", showFullDTtext: true);
+        string[] fileNames = openFileDialog.FileNames;
+        foreach (string text in fileNames)
+        {
+            SetProgressLargeText(Path.GetFileName(text));
+            if (ParseApplication(text))
+            {
+                CollectRetainValuesCommunicateAndPrintToExcel();
+            }
+        }
+        StopProgressIndicator();
+        ReportActivity("All selected Application files are completed ", showFullDTtext: false);
+        CloseSessionLogFile();
+    }
+
+    private bool ParseApplication(string cdoFileName)
+    {
+        bool result = false;
+        CParseAppDomain cParseAppDomain = new CParseAppDomain();
+        try
+        {
+            ReportActivity("Parse " + Path.GetFileName(cdoFileName), showFullDTtext: false);
+            m_ProgramInststance = cParseAppDomain.Parse(cdoFileName);
+        }
+        catch (Exception ex)
+        {
+            m_ProgramInststance = null;
+            MessageBox.Show("Parse " + ex.Message, "Failed to parse domain file.", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+            ReportActivity("Failed to parse domain file. Reason: " + ex.Message, showFullDTtext: false);
+        }
+        if (m_ProgramInststance != null)
+        {
+            string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(cdoFileName);
+            string path = Path.Combine(Path.GetDirectoryName(cdoFileName), fileNameWithoutExtension + ".rrsXml");
+            m_Application = new ApplicationUnit(fileNameWithoutExtension);
+            try
+            {
+                ReportActivity("Parse " + Path.GetFileName(path), showFullDTtext: false);
+                ApplicationStructureFile.UnpackFile(path, m_Application);
+                m_Application.ProgramInstance = m_ProgramInststance;
+                result = true;
+            }
+            catch (Exception ex2)
+            {
+                m_ProgramInststance = null;
+                m_Application = null;
+                MessageBox.Show("Parse " + ex2.Message, "Failed to parse structure file.", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+                ReportActivity("Failed to parse structure file. Reason: " + ex2.Message, showFullDTtext: false);
+            }
+        }
+        return result;
+    }
+
+    private void CollectRetainValuesCommunicateAndPrintToExcel()
+    {
+        try
+        {
+            List<RetainProperties> list = new List<RetainProperties>();
+            ReportActivity("Get retain properties", showFullDTtext: false);
+            m_Application.GetRetainProperties(list);
+            List<RetainProperties> list2 = new List<RetainProperties>();
+            List<RetainProperties> list3 = new List<RetainProperties>();
+            foreach (RetainProperties item in list)
+            {
+                if (item.ValType == tValType.StringType)
+                {
+                    list3.Add(item);
+                }
+                else
+                {
+                    list2.Add(item);
+                }
+            }
+            ReportActivity("Connect to OPC Server. Communicate " + list.Count + " items (" + list3.Count + " strings)", showFullDTtext: false);
+            OpcComm opcComm = new OpcComm();
+            opcComm.ActivityReport += OPCActivityReport;
+            int nrOfGoodItems = 0;
+            int nrOfBadItems = 0;
+            int nrOfUncertainItems = 0;
+            opcComm.ConnectAndReadItems(list2, isStringItems: false, OpcComm.MaxNrToCommunicateAtATime, ref nrOfGoodItems, ref nrOfBadItems, ref nrOfUncertainItems);
+            opcComm.ConnectAndReadItems(list3, isStringItems: true, OpcComm.MaxNrStringsToCommunicateAtATime, ref nrOfGoodItems, ref nrOfBadItems, ref nrOfUncertainItems);
+            ReportActivity("NrGood=" + nrOfGoodItems + " NrBad=" + nrOfBadItems + " NrUncertain=" + nrOfUncertainItems, showFullDTtext: false);
+            if (nrOfBadItems > 0)
+            {
+                ReportActivity("Warning. Bad quality received!", showFullDTtext: false);
+            }
+            opcComm.ActivityReport -= OPCActivityReport;
+            ReportActivity("Write values to Excel", showFullDTtext: false);
+            WriteToExcel(list, Path.Combine(DirectoryPath, m_Application.Name + "RetainValues.xlsx"));
+        }
+        catch (Exception ex)
+        {
+            ReportActivity("Failed. Reason: " + ex.Message.Replace("\r\n", " "), showFullDTtext: false);
+        }
+    }
+
+    private void OPCActivityReport(string msgText)
+    {
+        ReportActivity(msgText, showFullDTtext: false);
+    }
+
+    private string BuildFileName(bool writeCRFile, bool writeDiffValuesOnly)
+    {
+        return Path.Combine(path2: writeCRFile ? ((!writeDiffValuesOnly) ? (m_Application.Name + "CRValues.xlsx") : (m_Application.Name + "DiffCRValues.xlsx")) : ((!writeDiffValuesOnly) ? (m_Application.Name + "RValues.xlsx") : (m_Application.Name + "DiffRValues.xlsx")), path1: DirectoryPath);
+    }
+
+    private void WriteToExcel(List<RetainProperties> retainProperties, string fileName)
+    {
+        // Set the license context for EPPlus
+        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+
+        // Create a new Excel package
+        using (ExcelPackage excelPackage = new ExcelPackage())
+        {
+            // Create a worksheet
+            ExcelWorksheet worksheet = excelPackage.Workbook.Worksheets.Add("RetainProperties");
+
+            // Set the header row
+            worksheet.Cells[1, 1].Value = "Path";
+            worksheet.Cells[1, 2].Value = "InitialValue";
+            worksheet.Cells[1, 3].Value = "CommValue";
+            worksheet.Cells[1, 4].Value = "Quality";
+            worksheet.Cells[1, 5].Value = "Type";
+
+            // Style the header row
+            using (var range = worksheet.Cells[1, 1, 1, 5])
+            {
+                range.Style.Font.Bold = true;
+                range.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                range.Style.Fill.BackgroundColor.SetColor(Color.LightGray);
+                range.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+            }
+
+            // Write the data row by row
+            int rowIndex = 2; // Start writing data from row 2
+            foreach (RetainProperties retainProperty in retainProperties)
+            {
+                worksheet.Cells[rowIndex, 1].Value = retainProperty.Path;
+                worksheet.Cells[rowIndex, 2].Value = retainProperty.InitValue.Trim();
+                worksheet.Cells[rowIndex, 3].Value = retainProperty.CommunicatedValue.Trim();
+                worksheet.Cells[rowIndex, 4].Value = retainProperty.Quality;
+                worksheet.Cells[rowIndex, 5].Value = retainProperty.ValTypeAsString;
+
+                rowIndex++;
+            }
+
+            // Auto-fit the columns for better visibility
+            worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns();
+
+            // Save the Excel package to a file
+            FileInfo excelFile = new FileInfo(fileName);
+            excelPackage.SaveAs(excelFile);
+        }
+    }
+
+    private void setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem_Click(object sender, EventArgs e)
+    {
+        using MaxNrOPCItems maxNrOPCItems = new MaxNrOPCItems();
+        maxNrOPCItems.MaxNrOfNonStringItems = OpcComm.MaxNrToCommunicateAtATime;
+        maxNrOPCItems.MaxNrOfStringItems = OpcComm.MaxNrStringsToCommunicateAtATime;
+        maxNrOPCItems.NrOfOPCRetries = OpcComm.MaxNrOPCCallRetries;
+        if (maxNrOPCItems.ShowDialog(this) == DialogResult.OK)
+        {
+            OpcComm.MaxNrToCommunicateAtATime = maxNrOPCItems.MaxNrOfNonStringItems;
+            OpcComm.MaxNrStringsToCommunicateAtATime = maxNrOPCItems.MaxNrOfStringItems;
+            OpcComm.MaxNrOPCCallRetries = maxNrOPCItems.NrOfOPCRetries;
+        }
+    }
+
+    public void ReportActivity(string txtStr, bool showFullDTtext)
+    {
+        m_progressInd.SmallText = txtStr;
+        string text = ((!showFullDTtext) ? $"{DateTime.Now:HH.mm.ss.fff}" : $"{DateTime.Now:yyyy-MM-dd HH.mm.ss.fff}");
+        RichTextBox richTextBox = txtReport;
+        object obj = richTextBox.Text;
+        richTextBox.Text = string.Concat(obj, text, "  ", txtStr, '\n');
+        Refresh();
+    }
+
+    private void ClearActivityReport()
+    {
+        txtReport.Text = "";
+        Refresh();
+    }
+
+    private void SetProgressLargeText(string appName)
+    {
+        m_progressInd.LargeText = appName.Remove(appName.IndexOf('.'));
+    }
+
+    private void StartProgressIndicator()
+    {
+        m_progressInd.StartDelay = 2;
+        m_progressInd.ReleaseTime = 1;
+        m_progressInd.Style = global::ProgressIndicator.ProgressIndicator.eStyle.Automatic;
+        m_progressInd.Start(base.Location, base.Size);
+        m_progressInd.RemainingTime = "";
+    }
+
+    private void StopProgressIndicator()
+    {
+        m_progressInd.Stop();
+    }
+
+    private void CreateWorkingFolder(string shortFolderName)
+    {
+        string text = $"{DateTime.Now:yyyy-MM-dd HH.mm.ss.fff}";
+        m_directoryPath = Path.Combine(Application.StartupPath, shortFolderName + "_" + text);
+        Directory.CreateDirectory(m_directoryPath);
+    }
+
+    private void CreateSessionLogFile()
+    {
+        string path = Path.Combine(DirectoryPath, "SessionLog.txt");
+        using StreamWriter m_sessionLogWriter = new StreamWriter(path);
+        m_sessionLogWriter.WriteLine("Session started at: " + DateTime.Now);
+    }
+
+    private void CloseSessionLogFile()
+    {
+        string path = Path.Combine(DirectoryPath, "SessionLog.txt");
+        using StreamWriter m_sessionLogWriter = new StreamWriter(path, append: true);
+        m_sessionLogWriter.WriteLine("Session ended at: " + DateTime.Now);
+    }
+
+    private void Form1_Load(object sender, EventArgs e)
+    {
+    }
+
+    private void filesToolStripMenuItem_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+            CreateWorkingFolder("ComparedValues");
+            CreateSessionLogFile();
+            ClearActivityReport();
+            ReportActivity("Compare file(s): ", showFullDTtext: true);
+            Dictionary<string, string> folder1Map = SelectFilesFromFolder(1);
+            Dictionary<string, string> folder2Map = SelectFilesFromFolder(2);
+            Dictionary<string, KeyValuePair<string, string>> filesInCommon = null;
+            Dictionary<string, string> filesNotInCommon = null;
+            StartProgressIndicator();
+            CompareFolderMapContents(folder1Map, folder2Map, out filesInCommon, out filesNotInCommon);
+            foreach (KeyValuePair<string, KeyValuePair<string, string>> item in filesInCommon)
+            {
+                KeyValuePair<string, string> value = item.Value;
+                ReportActivity("Compare file: " + Path.Combine(value.Key, item.Key) + " with file: " + Path.Combine(value.Value, item.Key), showFullDTtext: false);
+                SetProgressLargeText("compare files " + item.Key);
+                if (value.Key == value.Value)
+                {
+                    ReportActivity("Warning. The file is compared with itself. You are supposed to select files from different folders", showFullDTtext: false);
+                }
+                if (item.Key != "SessionLog.txt")
+                {
+                    CompareTwoFiles(Path.Combine(value.Key, item.Key), Path.Combine(value.Value, item.Key));
+                }
+            }
+            foreach (KeyValuePair<string, string> item2 in filesNotInCommon)
+            {
+                if (item2.Key != "SessionLog.txt")
+                {
+                    ReportActivity("This file couldn't be compared because the file only exists in one of the two selection sets. File: " + Path.Combine(item2.Value, item2.Key), showFullDTtext: false);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ReportActivity("Failed. Reason: " + ex.Message.Replace("\r\n", " "), showFullDTtext: false);
+        }
+        finally
+        {
+            StopProgressIndicator();
+            CloseSessionLogFile();
+        }
+    }
+
+    // Other methods unchanged, updated to Excel writing as necessary...
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && components != null)
+        {
+            components.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    private void InitializeComponent()
+    {
+        this.txtReport = new System.Windows.Forms.RichTextBox();
+        this.menuStrip1 = new System.Windows.Forms.MenuStrip();
+        this.selectApplicationCdoXmlFilesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+        this.selectApplicationsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+        this.settingsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+        this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+        this.compareToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+        this.filesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuStrip1.SuspendLayout();
+        this.SuspendLayout();
+        // 
+        // txtReport
+        // 
+        this.txtReport.Dock = System.Windows.Forms.DockStyle.Fill;
+        this.txtReport.Location = new System.Drawing.Point(0, 24);
+        this.txtReport.Name = "txtReport";
+        this.txtReport.ReadOnly = true;
+        this.txtReport.Size = new System.Drawing.Size(374, 207);
+        this.txtReport.TabIndex = 4;
+        this.txtReport.Text = "";
+        // 
+        // menuStrip1
+        // 
+        this.menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+        this.selectApplicationCdoXmlFilesToolStripMenuItem,
+        this.settingsToolStripMenuItem,
+        this.compareToolStripMenuItem});
+        this.menuStrip1.Location = new System.Drawing.Point(0, 0);
+        this.menuStrip1.Name = "menuStrip1";
+        this.menuStrip1.Size = new System.Drawing.Size(374, 24);
+        this.menuStrip1.TabIndex = 5;
+        this.menuStrip1.Text = "menuStrip1";
+        // 
+        // selectApplicationCdoXmlFilesToolStripMenuItem
+        // 
+        this.selectApplicationCdoXmlFilesToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+        this.selectApplicationsToolStripMenuItem});
+        this.selectApplicationCdoXmlFilesToolStripMenuItem.Name = "selectApplicationCdoXmlFilesToolStripMenuItem";
+        this.selectApplicationCdoXmlFilesToolStripMenuItem.Size = new System.Drawing.Size(192, 20);
+        this.selectApplicationCdoXmlFilesToolStripMenuItem.Text = "Collect Values From Controller(s)";
+        // 
+        // selectApplicationsToolStripMenuItem
+        // 
+        this.selectApplicationsToolStripMenuItem.Name = "selectApplicationsToolStripMenuItem";
+        this.selectApplicationsToolStripMenuItem.Size = new System.Drawing.Size(182, 22);
+        this.selectApplicationsToolStripMenuItem.Text = "Select Application(s)";
+        this.selectApplicationsToolStripMenuItem.Click += new System.EventHandler(this.selectApplicationsToolStripMenuItem_Click);
+        // 
+        // settingsToolStripMenuItem
+        // 
+        this.settingsToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+        this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem});
+        this.settingsToolStripMenuItem.Name = "settingsToolStripMenuItem";
+        this.settingsToolStripMenuItem.Size = new System.Drawing.Size(61, 20);
+        this.settingsToolStripMenuItem.Text = "Settings";
+        // 
+        // setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem
+        // 
+        this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem.Name = "setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem";
+        this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+        this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem.Text = "Data Collection";
+        this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem.Click += new System.EventHandler(this.setMaxNrOfOPCItemsAtATimetemsToolStripMenuItem_Click);
+        // 
+        // compareToolStripMenuItem
+        // 
+        this.compareToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+        this.filesToolStripMenuItem});
+        this.compareToolStripMenuItem.Name = "compareToolStripMenuItem";
+        this.compareToolStripMenuItem.Size = new System.Drawing.Size(68, 20);
+        this.compareToolStripMenuItem.Text = "Compare";
+        // 
+        // filesToolStripMenuItem
+        // 
+        this.filesToolStripMenuItem.Name = "filesToolStripMenuItem";
+        this.filesToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+        this.filesToolStripMenuItem.Text = "Files";
+        this.filesToolStripMenuItem.Click += new System.EventHandler(this.filesToolStripMenuItem_Click);
+        // 
+        // Form1
+        // 
+        this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+        this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+        this.ClientSize = new System.Drawing.Size(374, 231);
+        this.Controls.Add(this.txtReport);
+        this.Controls.Add(this.menuStrip1);
+        this.MainMenuStrip = this.menuStrip1;
+        this.Name = "Form1";
+        this.Text = "Start Values Analyzer";
+        this.Load += new System.EventHandler(this.Form1_Load);
+        this.menuStrip1.ResumeLayout(false);
+        this.menuStrip1.PerformLayout();
+        this.ResumeLayout(false);
+        this.PerformLayout();
+    }
+}

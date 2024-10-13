@@ -1,0 +1,7 @@
+2024-07-04 11.22.07.739  1 Application file(s) selected
+11.22.07.750  Parse CopB_ModEAppl.cdoXml
+11.22.07.791  Parse CopB_ModEAppl.rrsXml
+11.22.07.856  Get retain properties
+11.22.07.870  Connect to OPC Server. Communicate 2811 items (359 strings)
+11.22.08.227  Failed. Reason: E_NETWORK_ERROR Could not connect to server.
+11.22.08.235  All selected Application files are completed 
